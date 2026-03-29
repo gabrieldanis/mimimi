@@ -1,15 +1,18 @@
 mod gitlab;
+mod tui;
 mod types;
 
 use std::io;
+use tui::App;
 
-use gitlab::{is_glab_installed, run_glab};
-use types::{MergeRequest, MergeRequestWithDiscussions};
+use crate::gitlab::{is_glab_installed, run_glab};
+use crate::types::{MergeRequest, MergeRequestWithDiscussions};
 
 fn main() {
     is_glab_installed();
     // TODO: add is_glab_logged_in checker
     let selected_mr = merge_request_loop();
+
     print_merge_request_comments(selected_mr);
 }
 
@@ -60,11 +63,8 @@ fn print_merge_request_comments(selected_mr: i32) {
 }
 
 fn print_merge_requests() {
-    if let Some(mrs) =
-        run_glab::<Vec<MergeRequest>>(&["mr", "list", "-R", "gitlab.com/glab-env/glab"])
-    {
-        for mr in &mrs {
-            println!("{} {} ({})", mr.iid, mr.title, mr.state);
-        }
-    }
+    let _ = ratatui::run(|terminal| App::default().run(terminal));
+    // for mr in &mrs {
+    //     println!("{} {} ({})", mr.iid, mr.title, mr.state);
+    // }
 }
