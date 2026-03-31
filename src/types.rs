@@ -4,6 +4,14 @@
 
 use serde::Deserialize;
 
+#[derive(Debug, Default, PartialEq)]
+pub enum AppState {
+    #[default]
+    MergeRequestList,
+    CommentList,
+    Exiting,
+}
+
 /// A GitLab user as returned by the glab JSON output.
 #[derive(Debug, Deserialize)]
 pub struct User {
