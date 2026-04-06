@@ -7,7 +7,7 @@ pub(crate) use crate::types::{MergeRequest, MergeRequestWithDiscussions};
 use std::io;
 
 use crossterm::event::{self, Event, KeyEventKind};
-use ratatui::{DefaultTerminal, Frame, layout::Rect, widgets::ListState};
+use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -37,8 +37,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-        self.render(area, frame);
+        self.render(frame);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -51,8 +50,8 @@ impl App {
         Ok(())
     }
 
-    fn render(&mut self, area: Rect, frame: &mut Frame) {
-        comments::render(self, area, frame);
+    fn render(&mut self, frame: &mut Frame) {
+        ui::render(self, frame);
     }
 
     fn fetch_merge_request_comments(&mut self, selected_mr: u64) {
@@ -66,5 +65,6 @@ impl App {
             "--comments",
         ])
         .expect("Failed to fetch merge request comments");
+        self.app_state = AppState::CommentList;
     }
 }

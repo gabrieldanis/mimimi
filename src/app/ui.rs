@@ -3,14 +3,14 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::types::AppState;
 
 use super::App;
 
-pub fn render(app: &mut App, area: Rect, frame: &mut Frame) {
+pub fn render(app: &mut App, frame: &mut Frame) {
     // Create the layout sections.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -88,7 +88,7 @@ pub fn render(app: &mut App, area: Rect, frame: &mut Frame) {
         {
             if let AppState::CommentList = app.app_state {
                 Span::styled(
-                    "Currently in Merge Request",
+                    format!("MR {}", app.merge_request_id),
                     Style::default().fg(Color::Green),
                 )
             } else {
