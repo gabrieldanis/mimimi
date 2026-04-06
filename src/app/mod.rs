@@ -1,24 +1,20 @@
-mod comments;
 mod keyboard_events;
-mod mr_list_widget;
+mod ui;
 
 use crate::gitlab::run_glab;
-use crate::types::{AppState, MergeRequest};
-use std::{io, string};
+use crate::types::AppState;
+pub(crate) use crate::types::{MergeRequest, MergeRequestWithDiscussions};
+use std::io;
 
 use crossterm::event::{self, Event, KeyEventKind};
-use ratatui::{
-    DefaultTerminal, Frame,
-    buffer::Buffer,
-    layout::Rect,
-    widgets::{ListState, Widget},
-};
+use ratatui::{DefaultTerminal, Frame, layout::Rect, widgets::ListState};
 
 #[derive(Debug, Default)]
 pub struct App {
     merge_requests: Vec<MergeRequest>,
     app_state: AppState,
-    current_merge_request: String,
+    merge_request_id: String,
+    merge_request_comments: MergeRequestWithDiscussions,
     list_state: ListState,
 
     exit: bool,
@@ -56,9 +52,19 @@ impl App {
     }
 
     fn render(&mut self, area: Rect, frame: &mut Frame) {
-        // if self.app_state == AppState::MergeRequestList {
-        //     mr_list_widget::render(self, area, frame);
-        // }
         comments::render(self, area, frame);
+    }
+
+    fn fetch_merge_request_comments(&mut self, selected_mr: u64) {
+        self.merge_request_id = selected_mr.to_string();
+        self.merge_request_comments = run_glab::<MergeRequestWithDiscussions>(&[
+            "-R",
+            "gitlab.com/glab-env/glab",
+            "mr",
+            "view",
+            &selected_mr.to_string(),
+            "--comments",
+        ])
+        .expect("Failed to fetch merge request comments");
     }
 }

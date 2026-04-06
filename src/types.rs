@@ -13,7 +13,7 @@ pub enum AppState {
 }
 
 /// A GitLab user as returned by the glab JSON output.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct User {
     pub id: u64,
     pub username: String,
@@ -73,7 +73,7 @@ pub struct Discussion {
 
 /// The response from `glab mr view <id> --comments -F json`: a full MR object
 /// with its discussion threads included under the `Discussions` field.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct MergeRequestWithDiscussions {
     pub id: u64,
     pub iid: u64,
