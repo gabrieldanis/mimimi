@@ -1,4 +1,5 @@
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::{Style, Stylize},
@@ -9,7 +10,7 @@ use ratatui::{
 
 use super::App;
 
-pub fn render(app: &mut App, area: Rect, buf: &mut Buffer) {
+pub fn render(app: &mut App, area: Rect, frame: &mut Frame) {
     // Center a 60-column box horizontally and vertically.
     const BOX_WIDTH: u16 = 80;
     let [_, center_v, _] = Layout::vertical([
@@ -74,5 +75,5 @@ pub fn render(app: &mut App, area: Rect, buf: &mut Buffer) {
         .highlight_symbol(Line::from("▶ ").cyan())
         .highlight_style(Style::default());
 
-    ratatui::widgets::StatefulWidget::render(list, center, buf, &mut app.list_state);
+    ratatui::widgets::StatefulWidget::render(list, center, frame.buffer_mut(), &mut app.list_state);
 }

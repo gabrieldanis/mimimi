@@ -1,9 +1,10 @@
+mod comments;
 mod keyboard_events;
 mod mr_list_widget;
 
 use crate::gitlab::run_glab;
 use crate::types::{AppState, MergeRequest};
-use std::io;
+use std::{io, string};
 
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
@@ -17,7 +18,9 @@ use ratatui::{
 pub struct App {
     merge_requests: Vec<MergeRequest>,
     app_state: AppState,
+    current_merge_request: String,
     list_state: ListState,
+
     exit: bool,
 }
 
@@ -39,8 +42,7 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
-        let buf = frame.buffer_mut();
-        self.render(area, buf);
+        self.render(area, frame);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -53,15 +55,10 @@ impl App {
         Ok(())
     }
 
-    fn render(&mut self, area: Rect, buf: &mut Buffer) {
-        if self.app_state == AppState::MergeRequestList {
-            mr_list_widget::render(self, area, buf);
-        }
-    }
-}
-
-impl Widget for &mut App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        self.render(area, buf);
+    fn render(&mut self, area: Rect, frame: &mut Frame) {
+        // if self.app_state == AppState::MergeRequestList {
+        //     mr_list_widget::render(self, area, frame);
+        // }
+        comments::render(self, area, frame);
     }
 }
