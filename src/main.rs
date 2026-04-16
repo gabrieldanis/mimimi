@@ -1,5 +1,7 @@
 mod app;
+mod diff;
 mod gitlab;
+mod highlight;
 mod types;
 
 use app::App;

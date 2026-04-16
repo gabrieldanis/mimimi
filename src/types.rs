@@ -42,11 +42,27 @@ pub struct MergeRequest {
     pub web_url: Option<String>,
 }
 
+/// Position information for a diff note, indicating which file and line(s)
+/// the comment refers to.
+#[derive(Debug, Deserialize, Clone)]
+pub struct NotePosition {
+    pub base_sha: Option<String>,
+    pub start_sha: Option<String>,
+    pub head_sha: Option<String>,
+    pub position_type: Option<String>,
+    pub new_path: Option<String>,
+    pub old_path: Option<String>,
+    pub new_line: Option<usize>,
+    pub old_line: Option<usize>,
+}
+
 /// A single note (comment) within a discussion thread, as returned by
 /// `glab mr view <id> --comments -F json`.
 #[derive(Debug, Deserialize)]
 pub struct Note {
     pub id: u64,
+    #[serde(rename = "type", default)]
+    pub note_type: String,
     pub body: String,
     pub author: User,
     /// `true` for automated system events (e.g. "requested review from @x").
@@ -57,6 +73,7 @@ pub struct Note {
     pub resolved: bool,
     pub resolved_at: Option<String>,
     pub resolved_by: Option<User>,
+    pub position: Option<NotePosition>,
     pub internal: bool,
     pub confidential: bool,
     pub noteable_type: String,

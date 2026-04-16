@@ -20,6 +20,27 @@ pub fn is_glab_installed() {
     }
 }
 
+/// Runs `glab` with the given arguments (no `-F json`) and returns raw stdout
+/// as a `String`. Useful for commands like `glab mr diff` that don't support
+/// JSON output.
+pub fn run_glab_raw(args: &[&str]) -> Option<String> {
+    let output = match Command::new("glab").args(args).output() {
+        Err(e) => {
+            println!("Error: failed to run glab: {}", e);
+            return None;
+        }
+        Ok(o) => o,
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("Error: glab exited with {}: {}", output.status, stderr);
+        return None;
+    }
+
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 /// Runs `glab` with the given arguments, automatically appending `-F json` to
 /// request JSON output, then deserializes stdout into `T`.
 ///

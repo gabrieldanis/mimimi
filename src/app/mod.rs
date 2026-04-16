@@ -1,7 +1,8 @@
 mod keyboard_events;
 mod ui;
 
-use crate::gitlab::run_glab;
+use crate::diff::{self, ParsedDiff};
+use crate::gitlab::{run_glab, run_glab_raw};
 use crate::types::AppState;
 pub(crate) use crate::types::{MergeRequest, MergeRequestWithDiscussions};
 use std::io;
@@ -15,10 +16,24 @@ pub struct App {
     app_state: AppState,
     merge_request_id: String,
     merge_request_comments: MergeRequestWithDiscussions,
+    /// Flattened non-system notes for indexed access in comment view.
+    flat_notes: Vec<FlatNote>,
+    /// Parsed diff data for the current MR.
+    parsed_diff: ParsedDiff,
     list_state: ListState,
     comment_list_state: ListState,
 
     exit: bool,
+}
+
+/// A flattened note with pre-extracted position info for rendering.
+#[derive(Debug)]
+pub struct FlatNote {
+    pub author_username: String,
+    pub created_at: String,
+    pub body: String,
+    pub file_path: Option<String>,
+    pub new_line: Option<usize>,
 }
 
 impl App {
@@ -56,24 +71,47 @@ impl App {
     }
 
     fn fetch_merge_request_comments(&mut self, selected_mr: u64) {
-        self.merge_request_id = selected_mr.to_string();
+        let mr_str = selected_mr.to_string();
+        self.merge_request_id = mr_str.clone();
+
         self.merge_request_comments = run_glab::<MergeRequestWithDiscussions>(&[
             "-R",
             "gitlab.com/glab-env/glab",
             "mr",
             "view",
-            &selected_mr.to_string(),
+            &mr_str,
             "--comments",
         ])
         .expect("Failed to fetch merge request comments");
 
-        let note_count: usize = self
+        // Fetch raw diff for code context display.
+        let raw_diff = run_glab_raw(&["mr", "diff", &mr_str, "-R", "gitlab.com/glab-env/glab"])
+            .unwrap_or_default();
+        self.parsed_diff = diff::parse_unified_diff(&raw_diff);
+
+        // Flatten non-system notes for indexed access.
+        self.flat_notes = self
             .merge_request_comments
             .discussions
             .iter()
-            .map(|d| d.notes.len())
-            .sum();
-        self.comment_list_state = if note_count > 0 {
+            .flat_map(|d| d.notes.iter())
+            .filter(|n| !n.system)
+            .map(|note| {
+                let (file_path, new_line) = match &note.position {
+                    Some(pos) => (pos.new_path.clone(), pos.new_line),
+                    None => (None, None),
+                };
+                FlatNote {
+                    author_username: note.author.username.clone(),
+                    created_at: note.created_at.clone(),
+                    body: note.body.clone(),
+                    file_path,
+                    new_line,
+                }
+            })
+            .collect();
+
+        self.comment_list_state = if !self.flat_notes.is_empty() {
             ListState::default().with_selected(Some(0))
         } else {
             ListState::default()
