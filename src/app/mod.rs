@@ -16,6 +16,7 @@ pub struct App {
     merge_request_id: String,
     merge_request_comments: MergeRequestWithDiscussions,
     list_state: ListState,
+    comment_list_state: ListState,
 
     exit: bool,
 }
@@ -65,6 +66,19 @@ impl App {
             "--comments",
         ])
         .expect("Failed to fetch merge request comments");
+
+        let note_count: usize = self
+            .merge_request_comments
+            .discussions
+            .iter()
+            .map(|d| d.notes.len())
+            .sum();
+        self.comment_list_state = if note_count > 0 {
+            ListState::default().with_selected(Some(0))
+        } else {
+            ListState::default()
+        };
+
         self.app_state = AppState::CommentList;
     }
 }

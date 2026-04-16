@@ -14,20 +14,3 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-// fn print_merge_request_comments(selected_mr: i32) {
-//     if let Some(mr) = run_glab::<MergeRequestWithDiscussions>(&[
-//         "-R",
-//         "gitlab.com/glab-env/glab",
-//         "mr",
-//         "view",
-//         &selected_mr.to_string(),
-//         "--comments",
-//     ]) {
-//         for discussion in &mr.discussions {
-//             for note in &discussion.notes {
-//                 println!("{}: {}", note.author.username, note.body);
-//             }
-//         }
-//     }
-// }

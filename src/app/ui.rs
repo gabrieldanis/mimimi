@@ -34,41 +34,10 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     frame.render_widget(title, chunks[0]);
 
-    let items: Vec<ListItem> = if app.merge_requests.is_empty() {
-        vec![ListItem::new(Text::from("No merge requests found."))]
-    } else {
-        app.merge_requests
-            .iter()
-            .map(|mr| {
-                let title_line = Line::from(vec![
-                    format!("!{}  ", mr.iid).into(),
-                    mr.title.as_str().bold(),
-                ]);
-                let meta_line = Line::from(vec![
-                    "   ".into(),
-                    format!("[{}]", mr.state).dark_gray(),
-                    "  ".into(),
-                    mr.author.username.as_str().into(),
-                    " → ".dark_gray(),
-                    mr.target_branch.as_str().into(),
-                ]);
-                ListItem::new(Text::from(vec![
-                    title_line,
-                    meta_line,
-                    Line::raw(""), // blank separator between cards
-                ]))
-            })
-            .collect()
-    };
-
-    let block = Block::bordered();
-
-    let list = List::new(items)
-        .block(block)
-        .highlight_symbol(Line::from("▶ ").cyan())
-        .highlight_style(Style::default());
-
-    frame.render_stateful_widget(list, chunks[1], &mut app.list_state);
+    match app.app_state {
+        AppState::CommentList => render_comment_list(app, frame, chunks[1]),
+        _ => render_mr_list(app, frame, chunks[1]),
+    }
 
     let current_navigation_text = vec![
         // The first half of the text
@@ -110,7 +79,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                 Style::default().fg(Color::Yellow),
             ),
             AppState::CommentList => Span::styled(
-                "(ESC) to cancel/ (s) to select",
+                "(ESC) to go back / (j/k) to navigate",
                 Style::default().fg(Color::Yellow),
             ),
             AppState::Exiting => Span::styled(
@@ -150,6 +119,90 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         let area = centered_rect(60, 25, frame.area());
         frame.render_widget(exit_paragraph, area);
     }
+}
+
+fn render_mr_list(app: &mut App, frame: &mut Frame, area: Rect) {
+    let items: Vec<ListItem> = if app.merge_requests.is_empty() {
+        vec![ListItem::new(Text::from("No merge requests found."))]
+    } else {
+        app.merge_requests
+            .iter()
+            .map(|mr| {
+                let title_line = Line::from(vec![
+                    format!("!{}  ", mr.iid).into(),
+                    mr.title.as_str().bold(),
+                ]);
+                let meta_line = Line::from(vec![
+                    "   ".into(),
+                    format!("[{}]", mr.state).dark_gray(),
+                    "  ".into(),
+                    mr.author.username.as_str().into(),
+                    " → ".dark_gray(),
+                    mr.target_branch.as_str().into(),
+                ]);
+                ListItem::new(Text::from(vec![
+                    title_line,
+                    meta_line,
+                    Line::raw(""), // blank separator between cards
+                ]))
+            })
+            .collect()
+    };
+
+    let block = Block::bordered();
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_symbol(Line::from("▶ ").cyan())
+        .highlight_style(Style::default());
+
+    frame.render_stateful_widget(list, area, &mut app.list_state);
+}
+
+fn render_comment_list(app: &mut App, frame: &mut Frame, area: Rect) {
+    let items: Vec<ListItem> = {
+        let notes: Vec<_> = app
+            .merge_request_comments
+            .discussions
+            .iter()
+            .flat_map(|d| d.notes.iter())
+            .filter(|n| !n.system)
+            .collect();
+
+        if notes.is_empty() {
+            vec![ListItem::new(Text::from("No comments found."))]
+        } else {
+            notes
+                .iter()
+                .map(|note| {
+                    let header_line = Line::from(vec![
+                        note.author.username.as_str().bold().fg(Color::Cyan),
+                        "  ".into(),
+                        note.created_at.as_str().dark_gray(),
+                    ]);
+                    // Preserve multi-line comment bodies.
+                    let body_lines: Vec<Line> = note
+                        .body
+                        .lines()
+                        .map(|l| Line::from(l.to_owned()))
+                        .collect();
+                    let mut all_lines = vec![header_line];
+                    all_lines.extend(body_lines);
+                    all_lines.push(Line::raw("")); // blank separator
+                    ListItem::new(Text::from(all_lines))
+                })
+                .collect()
+        }
+    };
+
+    let block = Block::bordered().title(format!(" Comments for MR !{} ", app.merge_request_id));
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_symbol(Line::from("▶ ").cyan())
+        .highlight_style(Style::default());
+
+    frame.render_stateful_widget(list, area, &mut app.comment_list_state);
 }
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
