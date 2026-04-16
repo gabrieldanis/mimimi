@@ -1,10 +1,10 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     symbols::border,
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
-    Frame,
 };
 
 use crate::diff;
@@ -22,7 +22,7 @@ const SURFACE: Color = Color::Rgb(60, 60, 70);
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     let outer = Layout::vertical([
-        Constraint::Length(3), // title bar
+        Constraint::Length(4), // title bar
         Constraint::Min(1),    // main content
         Constraint::Length(1), // status bar
     ])
@@ -48,10 +48,14 @@ fn render_title_bar(frame: &mut Frame, area: Rect) {
     let block = Block::new()
         .borders(Borders::BOTTOM)
         .border_set(border::PLAIN)
-        .border_style(Style::default().fg(SURFACE));
+        .border_style(Style::default().fg(SURFACE))
+        .padding(Padding::new(0, 0, 1, 0));
 
     let title = Line::from(vec![
-        Span::styled("  mimimi", Style::default().fg(ACCENT).bold()),
+        Span::styled(
+            " mimimi ",
+            Style::default().fg(Color::Black).bg(ACCENT).bold(),
+        ),
         Span::styled("  ", Style::default()),
         Span::styled(
             "merge request reviewer",
