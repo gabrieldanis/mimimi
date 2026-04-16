@@ -31,7 +31,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_title_bar(frame, outer[0]);
 
     match app.app_state {
-        AppState::CommentList => render_comment_view(app, frame, outer[1]),
+        AppState::CommentList | AppState::ConfirmResolve => {
+            render_comment_view(app, frame, outer[1])
+        }
         _ => render_mr_list(app, frame, outer[1]),
     }
 
@@ -39,6 +41,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     if let AppState::Exiting = app.app_state {
         render_exit_popup(frame);
+    }
+    if let AppState::ConfirmResolve = app.app_state {
+        render_resolve_popup(app, frame);
     }
 }
 
@@ -92,7 +97,8 @@ fn render_status_bar(app: &mut App, frame: &mut Frame, area: Rect) {
         ),
         AppState::CommentList => {
             let selected = app.comment_list_state.selected().unwrap_or(0) + 1;
-            let total = app.flat_notes.len();
+            let total = app.flat_threads.len();
+            let sel_count = app.selected_threads.len();
 
             // Check for "Sent!" indicator (show for 2 seconds after HTTP send).
             let sent_active = app
@@ -105,7 +111,45 @@ fn render_status_bar(app: &mut App, frame: &mut Frame, area: Rect) {
                 app.sent_indicator = None;
             }
 
-            let left = if sent_active {
+            // Check for status message (show for 5 seconds).
+            let status_msg_active = app
+                .status_message
+                .as_ref()
+                .is_some_and(|(_, t)| t.elapsed().as_secs() < 5);
+            if app
+                .status_message
+                .as_ref()
+                .is_some_and(|(_, t)| t.elapsed().as_secs() >= 5)
+            {
+                app.status_message = None;
+            }
+
+            let selection_info = if sel_count > 0 {
+                Span::styled(
+                    format!("  [{sel_count} selected]"),
+                    Style::default().fg(Color::Yellow).bold(),
+                )
+            } else {
+                Span::raw("")
+            };
+
+            let left = if let Some((msg, _)) = &app.status_message {
+                if status_msg_active {
+                    vec![Span::styled(
+                        format!(" {msg}"),
+                        Style::default().fg(Color::Yellow).bold(),
+                    )]
+                } else {
+                    vec![
+                        Span::styled(
+                            format!(" MR !{}", app.merge_request_id),
+                            Style::default().fg(ACCENT),
+                        ),
+                        Span::styled(format!("  {selected}/{total}"), Style::default().fg(MUTED)),
+                        selection_info,
+                    ]
+                }
+            } else if sent_active {
                 vec![
                     Span::styled(
                         " Sent to OpenCode ",
@@ -120,6 +164,7 @@ fn render_status_bar(app: &mut App, frame: &mut Frame, area: Rect) {
                         Style::default().fg(ACCENT),
                     ),
                     Span::styled(format!("  {selected}/{total}"), Style::default().fg(MUTED)),
+                    selection_info,
                 ]
             };
 
@@ -128,12 +173,29 @@ fn render_status_bar(app: &mut App, frame: &mut Frame, area: Rect) {
                 vec![
                     key_hint("esc", "back"),
                     Span::raw("  "),
+                    key_hint("space", "select"),
+                    Span::raw("  "),
+                    key_hint("a", "all"),
+                    Span::raw("  "),
+                    key_hint("r", "resolve"),
+                    Span::raw("  "),
                     key_hint("enter", "send"),
                     Span::raw("  "),
                     key_hint("j/k", "navigate"),
                 ],
             )
         }
+        AppState::ConfirmResolve => (
+            vec![Span::styled(
+                " Confirm resolve",
+                Style::default().fg(Color::Yellow).bold(),
+            )],
+            vec![
+                key_hint("y/enter", "confirm"),
+                Span::raw("  "),
+                key_hint("n/esc", "cancel"),
+            ],
+        ),
         AppState::Exiting => (
             vec![Span::styled(" Exiting", Style::default().fg(Color::Red))],
             vec![
@@ -210,9 +272,9 @@ fn render_mr_list(app: &mut App, frame: &mut Frame, area: Rect) {
 // ── Comment view ────────────────────────────────────────────────────────────
 
 fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
-    if app.flat_notes.is_empty() {
+    if app.flat_threads.is_empty() {
         let empty = Paragraph::new(Span::styled(
-            "No comments found.",
+            "No discussion threads found.",
             Style::default().fg(MUTED),
         ));
         frame.render_widget(empty, area.inner(Margin::new(2, 1)));
@@ -220,13 +282,14 @@ fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     let selected = app.comment_list_state.selected().unwrap_or(0);
-    let note = &app.flat_notes[selected];
+    let thread = &app.flat_threads[selected];
+    let is_selected = app.selected_threads.contains(&selected);
 
     let content_area = area.inner(Margin::new(2, 1));
 
-    // Build code context lines (if this is a diff note).
+    // Build code context lines (if this is a diff thread).
     let code_lines: Vec<Line<'_>> =
-        if let (Some(file_path), Some(target_line)) = (&note.file_path, note.new_line) {
+        if let (Some(file_path), Some(target_line)) = (&thread.file_path, thread.new_line) {
             let context_lines = diff::extract_context(&app.parsed_diff, file_path, target_line, 5);
             if context_lines.is_empty() {
                 Vec::new()
@@ -252,7 +315,7 @@ fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
         vec![
             Constraint::Length(code_height),
             Constraint::Length(1), // separator
-            Constraint::Min(1),    // comment body
+            Constraint::Min(1),    // thread body
         ]
     } else {
         vec![Constraint::Min(1)]
@@ -272,37 +335,80 @@ fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
         )));
         frame.render_widget(separator, sections[1]);
 
-        render_comment_body(note, frame, sections[2]);
+        render_thread_body(thread, is_selected, frame, sections[2]);
     } else {
-        render_comment_body(note, frame, sections[0]);
+        render_thread_body(thread, is_selected, frame, sections[0]);
     }
 }
 
-/// Render the comment author, timestamp, and body text into the given area.
-fn render_comment_body(note: &super::FlatNote, frame: &mut Frame, area: Rect) {
+/// Render all notes in a thread stacked, with the selection checkbox on the first note.
+fn render_thread_body(
+    thread: &super::FlatThread,
+    is_selected: bool,
+    frame: &mut Frame,
+    area: Rect,
+) {
     let mut lines: Vec<Line<'_>> = Vec::new();
 
-    // Author + timestamp header
-    lines.push(Line::from(vec![
-        Span::styled(
-            note.author_username.clone(),
-            Style::default().fg(ACCENT).bold(),
-        ),
-        Span::raw("  "),
-        Span::styled(note.created_at.clone(), Style::default().fg(MUTED)),
-    ]));
+    // Thread status header (checkbox + resolved indicator)
+    let checkbox = if is_selected { "[x] " } else { "[ ] " };
+    let mut header_spans = vec![Span::styled(
+        checkbox,
+        Style::default()
+            .fg(if is_selected { Color::Yellow } else { MUTED })
+            .bold(),
+    )];
+    if thread.resolved {
+        header_spans.push(Span::styled(
+            "RESOLVED ",
+            Style::default().fg(Color::Green).bold(),
+        ));
+    }
+    if thread.notes.len() > 1 {
+        header_spans.push(Span::styled(
+            format!("{} replies", thread.notes.len() - 1),
+            Style::default().fg(MUTED),
+        ));
+    }
+    lines.push(Line::from(header_spans));
     lines.push(Line::raw(""));
 
-    // Comment body
-    for body_line in note.body.lines() {
-        lines.push(Line::from(Span::styled(
-            body_line.to_string(),
-            Style::default().fg(Color::White),
-        )));
+    // Render each note in the thread
+    for (i, note) in thread.notes.iter().enumerate() {
+        if i > 0 {
+            // Visual separator between replies
+            lines.push(Line::from(Span::styled(
+                "  ┄┄┄",
+                Style::default().fg(SURFACE),
+            )));
+            lines.push(Line::raw(""));
+        }
+
+        // Author + timestamp
+        let indent = if i > 0 { "  " } else { "" };
+        lines.push(Line::from(vec![
+            Span::raw(indent.to_string()),
+            Span::styled(
+                note.author_username.clone(),
+                Style::default().fg(ACCENT).bold(),
+            ),
+            Span::raw("  "),
+            Span::styled(note.created_at.clone(), Style::default().fg(MUTED)),
+        ]));
+        lines.push(Line::raw(""));
+
+        // Comment body (indent replies)
+        for body_line in note.body.lines() {
+            lines.push(Line::from(Span::styled(
+                format!("{indent}{body_line}"),
+                Style::default().fg(Color::White),
+            )));
+        }
+        lines.push(Line::raw(""));
     }
 
-    let comment_widget = Paragraph::new(lines).wrap(Wrap { trim: false });
-    frame.render_widget(comment_widget, area);
+    let widget = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(widget, area);
 }
 
 // ── Exit popup ──────────────────────────────────────────────────────────────
@@ -334,6 +440,52 @@ fn render_exit_popup(frame: &mut Frame) {
     ])
     .block(block)
     .alignment(Alignment::Center);
+
+    frame.render_widget(text, area);
+}
+
+// ── Resolve confirmation popup ─────────────────────────────────────────────
+
+fn render_resolve_popup(app: &App, frame: &mut Frame) {
+    let indices = app.resolvable_selected_indices();
+    let thread_nums: String = indices
+        .iter()
+        .map(|i| format!("#{}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let area = centered_rect(60, 30, frame.area());
+
+    frame.render_widget(Clear, area);
+
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Yellow))
+        .padding(Padding::new(2, 2, 1, 1))
+        .style(Style::default().bg(Color::Rgb(25, 25, 35)))
+        .title(Span::styled(
+            " Resolve Threads ",
+            Style::default().fg(Color::Yellow).bold(),
+        ));
+
+    let text = Paragraph::new(vec![
+        Line::from(Span::styled(
+            "Mark the following threads as resolved?",
+            Style::default().fg(Color::White).bold(),
+        )),
+        Line::raw(""),
+        Line::from(Span::styled(thread_nums, Style::default().fg(ACCENT))),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("[y/enter]", Style::default().fg(Color::Yellow).bold()),
+            Span::raw(" confirm   "),
+            Span::styled("[n/esc]", Style::default().fg(Color::Yellow).bold()),
+            Span::raw(" cancel"),
+        ]),
+    ])
+    .block(block)
+    .wrap(Wrap { trim: false });
 
     frame.render_widget(text, area);
 }
