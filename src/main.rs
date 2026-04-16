@@ -2,6 +2,7 @@ mod app;
 mod diff;
 mod gitlab;
 mod highlight;
+mod opencode;
 mod types;
 
 use app::App;

@@ -72,7 +72,7 @@ fn render_title_bar(frame: &mut Frame, area: Rect) {
 
 // ── Status bar ──────────────────────────────────────────────────────────────
 
-fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
+fn render_status_bar(app: &mut App, frame: &mut Frame, area: Rect) {
     let (left_spans, right_spans) = match app.app_state {
         AppState::MergeRequestList => (
             vec![
@@ -93,16 +93,42 @@ fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
         AppState::CommentList => {
             let selected = app.comment_list_state.selected().unwrap_or(0) + 1;
             let total = app.flat_notes.len();
-            (
+
+            // Check for "Sent!" indicator (show for 2 seconds after HTTP send).
+            let sent_active = app
+                .sent_indicator
+                .is_some_and(|t| t.elapsed().as_secs() < 2);
+            if app
+                .sent_indicator
+                .is_some_and(|t| t.elapsed().as_secs() >= 2)
+            {
+                app.sent_indicator = None;
+            }
+
+            let left = if sent_active {
+                vec![
+                    Span::styled(
+                        " Sent to OpenCode ",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                    Span::styled(format!("  {selected}/{total}"), Style::default().fg(MUTED)),
+                ]
+            } else {
                 vec![
                     Span::styled(
                         format!(" MR !{}", app.merge_request_id),
                         Style::default().fg(ACCENT),
                     ),
                     Span::styled(format!("  {selected}/{total}"), Style::default().fg(MUTED)),
-                ],
+                ]
+            };
+
+            (
+                left,
                 vec![
                     key_hint("esc", "back"),
+                    Span::raw("  "),
+                    key_hint("enter", "send"),
                     Span::raw("  "),
                     key_hint("j/k", "navigate"),
                 ],

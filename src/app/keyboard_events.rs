@@ -9,6 +9,7 @@ impl App {
                 KeyCode::Esc => self.app_state = AppState::MergeRequestList,
                 KeyCode::Up | KeyCode::Char('k') => self.comment_list_state.select_previous(),
                 KeyCode::Down | KeyCode::Char('j') => self.comment_list_state.select_next(),
+                KeyCode::Enter => self.pending_send = true,
                 _ => {}
             },
             _ => match key_event.code {
