@@ -1,9 +1,10 @@
 use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
+    layout::{Alignment, Constraint, Layout, Margin, Rect},
+    style::{Color, Modifier, Style},
+    symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
+    Frame,
 };
 
 use crate::diff;
@@ -12,170 +13,186 @@ use crate::types::AppState;
 
 use super::App;
 
+/// Accent colour used throughout the UI.
+const ACCENT: Color = Color::Cyan;
+/// Muted foreground for secondary text.
+const MUTED: Color = Color::DarkGray;
+/// Slightly brighter muted for borders / subtle chrome.
+const SURFACE: Color = Color::Rgb(60, 60, 70);
+
 pub fn render(app: &mut App, frame: &mut Frame) {
-    // Create the layout sections.
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(frame.area());
+    let outer = Layout::vertical([
+        Constraint::Length(3), // title bar
+        Constraint::Min(1),    // main content
+        Constraint::Length(1), // status bar
+    ])
+    .split(frame.area());
 
-    // TITLE
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default());
-
-    let title = Paragraph::new(Text::styled(
-        "Send Merge Requests to Opencode",
-        Style::default().fg(Color::Magenta),
-    ))
-    .block(title_block);
-
-    frame.render_widget(title, chunks[0]);
+    render_title_bar(frame, outer[0]);
 
     match app.app_state {
-        AppState::CommentList => render_comment_view(app, frame, chunks[1]),
-        _ => render_mr_list(app, frame, chunks[1]),
+        AppState::CommentList => render_comment_view(app, frame, outer[1]),
+        _ => render_mr_list(app, frame, outer[1]),
     }
 
-    let current_navigation_text = vec![
-        match app.app_state {
-            AppState::MergeRequestList => {
-                Span::styled("Merge Requests", Style::default().fg(Color::Green))
-            }
-            AppState::CommentList => {
-                Span::styled("Threads and Comments", Style::default().fg(Color::Yellow))
-            }
-            AppState::Exiting => Span::styled("Exiting", Style::default().fg(Color::LightRed)),
-        }
-        .to_owned(),
-        Span::styled(" | ", Style::default().fg(Color::White)),
-        {
-            if let AppState::CommentList = app.app_state {
-                Span::styled(
-                    format!("MR {}", app.merge_request_id),
-                    Style::default().fg(Color::Green),
-                )
-            } else {
-                Span::styled(
-                    "No Merge Request selected",
-                    Style::default().fg(Color::DarkGray),
-                )
-            }
-        },
-    ];
-
-    let mode_footer = Paragraph::new(Line::from(current_navigation_text))
-        .block(Block::default().borders(Borders::ALL));
-
-    let current_keys_hint = {
-        match app.app_state {
-            AppState::MergeRequestList => Span::styled(
-                "(q) to quit / (enter) to select",
-                Style::default().fg(Color::Yellow),
-            ),
-            AppState::CommentList => Span::styled(
-                "(ESC) to go back / (j/k) to navigate",
-                Style::default().fg(Color::Yellow),
-            ),
-            AppState::Exiting => Span::styled(
-                "(ESC) to abort / (enter) to exit",
-                Style::default().fg(Color::Yellow),
-            ),
-        }
-    };
-
-    let key_notes_footer =
-        Paragraph::new(Line::from(current_keys_hint)).block(Block::default().borders(Borders::ALL));
-
-    let footer_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[2]);
-
-    frame.render_widget(mode_footer, footer_chunks[0]);
-    frame.render_widget(key_notes_footer, footer_chunks[1]);
+    render_status_bar(app, frame, outer[2]);
 
     if let AppState::Exiting = app.app_state {
-        frame.render_widget(Clear, frame.area());
-        let popup_block = Block::default()
-            .title("Y/N")
-            .borders(Borders::NONE)
-            .style(Style::default().bg(Color::DarkGray));
-
-        let exit_text = Text::styled(
-            "Would you like to output the buffer as json? (y/n)",
-            Style::default().fg(Color::Red),
-        );
-        let exit_paragraph = Paragraph::new(exit_text)
-            .block(popup_block)
-            .wrap(Wrap { trim: false });
-
-        let area = centered_rect(60, 25, frame.area());
-        frame.render_widget(exit_paragraph, area);
+        render_exit_popup(frame);
     }
 }
 
+// ── Title bar ───────────────────────────────────────────────────────────────
+
+fn render_title_bar(frame: &mut Frame, area: Rect) {
+    let block = Block::new()
+        .borders(Borders::BOTTOM)
+        .border_set(border::PLAIN)
+        .border_style(Style::default().fg(SURFACE));
+
+    let title = Line::from(vec![
+        Span::styled("  mimimi", Style::default().fg(ACCENT).bold()),
+        Span::styled("  ", Style::default()),
+        Span::styled(
+            "merge request reviewer",
+            Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
+        ),
+    ]);
+
+    let widget = Paragraph::new(title)
+        .block(block)
+        .alignment(Alignment::Left);
+
+    frame.render_widget(widget, area);
+}
+
+// ── Status bar ──────────────────────────────────────────────────────────────
+
+fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
+    let (left_spans, right_spans) = match app.app_state {
+        AppState::MergeRequestList => (
+            vec![
+                Span::styled(" Merge Requests", Style::default().fg(ACCENT)),
+                Span::styled(
+                    format!("  {} items", app.merge_requests.len()),
+                    Style::default().fg(MUTED),
+                ),
+            ],
+            vec![
+                key_hint("q", "quit"),
+                Span::raw("  "),
+                key_hint("enter", "select"),
+                Span::raw("  "),
+                key_hint("j/k", "navigate"),
+            ],
+        ),
+        AppState::CommentList => {
+            let selected = app.comment_list_state.selected().unwrap_or(0) + 1;
+            let total = app.flat_notes.len();
+            (
+                vec![
+                    Span::styled(
+                        format!(" MR !{}", app.merge_request_id),
+                        Style::default().fg(ACCENT),
+                    ),
+                    Span::styled(format!("  {selected}/{total}"), Style::default().fg(MUTED)),
+                ],
+                vec![
+                    key_hint("esc", "back"),
+                    Span::raw("  "),
+                    key_hint("j/k", "navigate"),
+                ],
+            )
+        }
+        AppState::Exiting => (
+            vec![Span::styled(" Exiting", Style::default().fg(Color::Red))],
+            vec![
+                key_hint("esc", "cancel"),
+                Span::raw("  "),
+                key_hint("enter", "confirm"),
+            ],
+        ),
+    };
+
+    let left = Paragraph::new(Line::from(left_spans));
+    let right = Paragraph::new(Line::from(right_spans)).alignment(Alignment::Right);
+
+    // Render both on same area; left is left-aligned, right is right-aligned.
+    frame.render_widget(left, area);
+    frame.render_widget(right, area);
+}
+
+/// Render a key hint like `[q] quit` with accent styling.
+fn key_hint<'a>(key: &'a str, desc: &'a str) -> Span<'a> {
+    // We return a single span with embedded formatting; for simplicity use
+    // a composed string. For true multi-style we'd need a Line, but the
+    // status bar already uses Line::from(vec![...]).
+    // Instead, return two spans via a helper — caller collects.
+    // Actually let's just style it simply.
+    Span::styled(
+        format!("[{key}] {desc}"),
+        Style::default().fg(Color::Rgb(140, 140, 150)),
+    )
+}
+
+// ── MR list ─────────────────────────────────────────────────────────────────
+
 fn render_mr_list(app: &mut App, frame: &mut Frame, area: Rect) {
+    let inner = area.inner(Margin::new(1, 0));
+
     let items: Vec<ListItem> = if app.merge_requests.is_empty() {
-        vec![ListItem::new(Text::from("No merge requests found."))]
+        vec![ListItem::new(Line::from(vec![Span::styled(
+            "No merge requests found.",
+            Style::default().fg(MUTED),
+        )]))]
     } else {
         app.merge_requests
             .iter()
             .map(|mr| {
                 let title_line = Line::from(vec![
-                    format!("!{}  ", mr.iid).into(),
-                    mr.title.as_str().bold(),
+                    Span::styled(format!("!{}", mr.iid), Style::default().fg(ACCENT).bold()),
+                    Span::raw("  "),
+                    Span::styled(mr.title.as_str(), Style::default().bold()),
                 ]);
                 let meta_line = Line::from(vec![
-                    "   ".into(),
-                    format!("[{}]", mr.state).dark_gray(),
-                    "  ".into(),
-                    mr.author.username.as_str().into(),
-                    " → ".dark_gray(),
-                    mr.target_branch.as_str().into(),
+                    Span::raw("    "),
+                    Span::styled(format!("[{}]", mr.state), Style::default().fg(MUTED)),
+                    Span::raw("  "),
+                    Span::styled(
+                        mr.author.username.as_str(),
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(" -> ", Style::default().fg(MUTED)),
+                    Span::styled(mr.target_branch.as_str(), Style::default().fg(Color::White)),
                 ]);
                 ListItem::new(Text::from(vec![title_line, meta_line, Line::raw("")]))
             })
             .collect()
     };
 
-    let block = Block::bordered();
-
     let list = List::new(items)
-        .block(block)
-        .highlight_symbol(Line::from("▶ ").cyan())
-        .highlight_style(Style::default());
+        .highlight_symbol("  > ")
+        .highlight_style(Style::default().fg(ACCENT));
 
-    frame.render_stateful_widget(list, area, &mut app.list_state);
+    frame.render_stateful_widget(list, inner, &mut app.list_state);
 }
 
-/// Render a single comment filling the entire center area, with code context
-/// and syntax highlighting when available.
+// ── Comment view ────────────────────────────────────────────────────────────
+
 fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
     if app.flat_notes.is_empty() {
-        let empty =
-            Paragraph::new("No comments found.").block(Block::bordered().title(" Comments "));
-        frame.render_widget(empty, area);
+        let empty = Paragraph::new(Span::styled(
+            "No comments found.",
+            Style::default().fg(MUTED),
+        ));
+        frame.render_widget(empty, area.inner(Margin::new(2, 1)));
         return;
     }
 
     let selected = app.comment_list_state.selected().unwrap_or(0);
-    let total = app.flat_notes.len();
     let note = &app.flat_notes[selected];
 
-    let block_title = format!(
-        " Comment {}/{} for MR !{} ",
-        selected + 1,
-        total,
-        app.merge_request_id
-    );
-    let outer_block = Block::bordered().title(block_title);
-    let inner_area = outer_block.inner(area);
-    frame.render_widget(outer_block, area);
+    let content_area = area.inner(Margin::new(2, 1));
 
     // Build code context lines (if this is a diff note).
     let code_lines: Vec<Line<'_>> =
@@ -185,16 +202,12 @@ fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
                 Vec::new()
             } else {
                 let mut lines = Vec::new();
-                // File path header
-                lines.push(Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(
-                        format!("{file_path}:{target_line}"),
-                        Style::default().fg(Color::Cyan).bold(),
-                    ),
-                ]));
+                // File path pill
+                lines.push(Line::from(vec![Span::styled(
+                    format!(" {file_path}:{target_line} "),
+                    Style::default().fg(ACCENT).bold(),
+                )]));
                 lines.push(Line::raw(""));
-                // Syntax-highlighted diff lines
                 lines.extend(highlight::highlight_diff_lines(file_path, &context_lines));
                 lines.push(Line::raw(""));
                 lines
@@ -205,7 +218,6 @@ fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
 
     let code_height = code_lines.len() as u16;
 
-    // Split inner area: code block on top (if present), then comment below.
     let constraints = if code_height > 0 {
         vec![
             Constraint::Length(code_height),
@@ -216,22 +228,20 @@ fn render_comment_view(app: &mut App, frame: &mut Frame, area: Rect) {
         vec![Constraint::Min(1)]
     };
 
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(inner_area);
+    let sections = Layout::vertical(constraints).split(content_area);
 
     if code_height > 0 {
         let code_widget = Paragraph::new(code_lines);
         frame.render_widget(code_widget, sections[0]);
 
-        // Separator line
-        let separator = Paragraph::new(Line::from(
-            "─".repeat(sections[1].width as usize).dark_gray(),
-        ));
+        // Thin separator
+        let sep_width = sections[1].width as usize;
+        let separator = Paragraph::new(Line::from(Span::styled(
+            "─".repeat(sep_width),
+            Style::default().fg(SURFACE),
+        )));
         frame.render_widget(separator, sections[1]);
 
-        // Comment body section
         render_comment_body(note, frame, sections[2]);
     } else {
         render_comment_body(note, frame, sections[0]);
@@ -246,42 +256,72 @@ fn render_comment_body(note: &super::FlatNote, frame: &mut Frame, area: Rect) {
     lines.push(Line::from(vec![
         Span::styled(
             note.author_username.clone(),
-            Style::default().fg(Color::Cyan).bold(),
+            Style::default().fg(ACCENT).bold(),
         ),
         Span::raw("  "),
-        Span::styled(
-            note.created_at.clone(),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled(note.created_at.clone(), Style::default().fg(MUTED)),
     ]));
     lines.push(Line::raw(""));
 
     // Comment body
     for body_line in note.body.lines() {
-        lines.push(Line::from(body_line.to_string()));
+        lines.push(Line::from(Span::styled(
+            body_line.to_string(),
+            Style::default().fg(Color::White),
+        )));
     }
 
     let comment_widget = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(comment_widget, area);
 }
 
-/// helper function to create a centered rect using up certain percentage of the available rect `r`
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
+// ── Exit popup ──────────────────────────────────────────────────────────────
 
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+fn render_exit_popup(frame: &mut Frame) {
+    frame.render_widget(Clear, frame.area());
+
+    let area = centered_rect(50, 20, frame.area());
+
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(ACCENT))
+        .padding(Padding::new(2, 2, 1, 1))
+        .style(Style::default().bg(Color::Rgb(25, 25, 35)));
+
+    let text = Paragraph::new(vec![
+        Line::from(Span::styled(
+            "Output buffer as JSON?",
+            Style::default().fg(Color::White).bold(),
+        )),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("[y]", Style::default().fg(ACCENT).bold()),
+            Span::raw(" yes   "),
+            Span::styled("[n]", Style::default().fg(ACCENT).bold()),
+            Span::raw(" no"),
+        ]),
+    ])
+    .block(block)
+    .alignment(Alignment::Center);
+
+    frame.render_widget(text, area);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(popup_layout[1])[1]
 }
